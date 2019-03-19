@@ -1,0 +1,1191 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Assignment 2 - Mining Frequent Pattern and Asssociation Rules\n",
+    "This answer sheet contains your answer to questions in Section 1~3. Sentences in <span style=\"color:blue\">blue</span> indicates questions to be answered. \n",
+    "\n",
+    "For open questions, please organize your answer into \"points\" to ease our grading efforts. For example, an answer to \"What is the most popular item? Explain you answer and describe any assumptions you’ve made.\" should look like:\n",
+    "\n",
+    "> The most popular item ID is 12345. The reason is that:\n",
+    "> - reason 1\n",
+    "> - reason 2\n",
+    "> \n",
+    "> I've made the following assumptions:\n",
+    "> - assumption 1\n",
+    "> - assumption 2\n",
+    "\n",
+    "If you wish to type math equations in markdown, follow this link: https://jupyter-notebook.readthedocs.io/en/stable/examples/Notebook/Working%20With%20Markdown%20Cells.html#LaTeX-equations\n",
+    "\n",
+    "Remember to save this Jupyter notebook as __YourNameInIVLE_YourIDInIVLE.ipynb__."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "**Import all libraries and load data here**"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 91,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Missing values count: \n",
+      "InvoiceNo           0\n",
+      "StockCode           0\n",
+      "Description      1454\n",
+      "Quantity            0\n",
+      "InvoiceDate         0\n",
+      "UnitPrice           0\n",
+      "CustomerID     135080\n",
+      "dtype: int64\n",
+      "\n",
+      "Negative Unitprice: 2517\n",
+      "\n",
+      "Wrong Stockcodes: 2995\n"
+     ]
+    }
+   ],
+   "source": [
+    "# This is a code cell\n",
+    "# -- Import all libraries and load data in this cell --\n",
+    "\n",
+    "# data manipulation\n",
+    "import pandas as pd\n",
+    "\n",
+    "# data visualization\n",
+    "import matplotlib.pyplot as plt\n",
+    "\n",
+    "# record elapsed time\n",
+    "import time\n",
+    "\n",
+    "# save text\n",
+    "import numpy as np\n",
+    "\n",
+    "# association rule mining\n",
+    "from mlxtend.frequent_patterns import apriori as mlx_apriori\n",
+    "from efficient_apriori import apriori as eff_apriori\n",
+    "\n",
+    "# ignore warnings\n",
+    "import warnings\n",
+    "warnings.filterwarnings('ignore')\n",
+    "\n",
+    "# Read \"record.csv\" as pandas DataFrame\n",
+    "df = pd.read_csv(\"record.csv\")\n",
+    "\n",
+    "# Print types of dirty records\n",
+    "print(\"Missing values count: \")\n",
+    "print(df.isnull().sum())\n",
+    "print(\"\\nNegative Unitprice: %d\"%(df.UnitPrice.loc[df.UnitPrice <= 0].count()))\n",
+    "print(\"\\nWrong Stockcodes: %d\"%(df.StockCode.str.match(\"[^0-9]\").sum()))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Section 1 - Data Cleaning and Exploration (20 points)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> Please provide a description of each of the types of “dirty” records that you can find in the dataset, as well as the corresponding number of such records that are to be removed the dataset. Also, write down your code for removing those records. </span>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    ">**\"Dirty\" Records:** (There exists intersection parts of three types)<br>\n",
+    "-  Missing values: Description=1454, CustomerID=135080; <br>\n",
+    "-  Negative unitprices: 2517;<br>\n",
+    "-  Wrong StockCode (like \"BANK CHARGES\"): 2995."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 92,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "\n",
+      "1-2.Starting date: 2010-12-01 08:26:00; Ending date: 2011-12-09 12:50:00\n",
+      "3.Number of customers: 4362\n",
+      "4.Number of transactions: 21785\n",
+      "5.Number of items: 3676\n",
+      "6.Number of transactions customer ID 17850 has made: 35\n",
+      "7.Which customer (ID) has made the most transactions: ID 14911\n",
+      "8.What is the item ID of the best-seller: ID 84077\n"
+     ]
+    }
+   ],
+   "source": [
+    "# This is a code cell\n",
+    "# -- Your code for removing dirty records goes here --\n",
+    "\n",
+    "# 1. Drop missing values\n",
+    "df.dropna(inplace=True)\n",
+    "\n",
+    "# 2. Drop negative Unitprice\n",
+    "# Note that quantity can be negative because there are return services, i.e. StockCode 23843 has two transactions \n",
+    "# with quantity of 80885 and -80885, so eventually not even one item-23843 is given out in the two transactions.\n",
+    "df = df[(df['UnitPrice']>0)]\n",
+    "\n",
+    "# 3. Drop wrong stockcode like \"BANK CHARGES\"\n",
+    "df = df.loc[df.StockCode.str.match(\"^[0-9]\")]\n",
+    "\n",
+    "print(\"\\n1-2.Starting date: {}; Ending date: {}\".format(df.InvoiceDate.min(), df.InvoiceDate.max()))\n",
+    "print(\"3.Number of customers: %d\"%(df.CustomerID.nunique()))\n",
+    "print(\"4.Number of transactions: %d\"%(df.InvoiceNo.nunique()))\n",
+    "print(\"5.Number of items: %d\"%(df.StockCode.nunique()))\n",
+    "\n",
+    "# df_1 contains only CustomerID and unique InvoiceNo\n",
+    "df_1 = df[['CustomerID','InvoiceNo']]\n",
+    "df_1.drop_duplicates('InvoiceNo', keep='first', inplace=True)\n",
+    "series = df_1['CustomerID'].value_counts()\n",
+    "print(\"6.Number of transactions customer ID 17850 has made: %d\"%(series[series.index  == 17850.0].data[0]))\n",
+    "print(\"7.Which customer (ID) has made the most transactions: ID %d\"%(series.index[0]))\n",
+    "\n",
+    "# df_2 contains only StockCode and Quantity\n",
+    "df_2 = df[['StockCode','Quantity']]\n",
+    "df_2 = df_2.groupby(['StockCode'], as_index=False)['Quantity'].sum()\n",
+    "print(\"8.What is the item ID of the best-seller: ID {}\".format(df_2.StockCode[df_2.Quantity == df_2.Quantity.max()].tolist()[0]))\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 1)~8) Please provide the answers to the questions listed in the table. </span>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "This is a markdown cell. Please fill in your answer for (1)~(8).\n",
+    "\n",
+    "| No. | Question                                                                                                   | Answer       |\n",
+    "|-----|------------------------------------------------------------------------------------------------------------|--------------|\n",
+    "| 1)  | Starting date of the dataset?                                                                              | _2010-12-01_ |\n",
+    "| 2)  | Ending date of the dataset?                                                                                | _2011-12-09_ |\n",
+    "| 3)  | Number of customers?                                                                                       | _4362_ |\n",
+    "| 4)  | Number of transactions?                                                                                    | _21785_ |\n",
+    "| 5)  | Number of different kind of items?                                                                         | _3676_ |\n",
+    "| 6)  | Number of transactions customer ID 17850 has made?                                                         | 35 |\n",
+    "| 7)  | Which customer (ID) has made the most transactions?                                                        | _14911_ |\n",
+    "| 8)  | What is the item ID of the best-seller? We define \"best-seller\" as the item with the highest sales volume. | _84077_ |"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 9) Next, let us get some general understanding about the transactions.  Please make a histogram of the number of unique items per transaction and describe one insight that you can observe from the plot, and explain why you find it interesting.  </span>"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 134,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "image/png": "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c889l5tu2ppbppSu3Cep+wLvkvQG2Z2lVgOH8vadoBrIbmh+IdmNTGan8uuAn0pSlOlqgvkXYqkvIjOrPnfccQc33XQT999/P/379+e5557j9ddf5zOf+QwnnnhipxLEllx00UUsXLiQu+++m8GDB/PSSy9xww03dFn7Xa1sQ0zpPr7nAn8hSwwvkt0tbF3uBuArefs+zCNINz5Py18EhpUrPjMzgNWrVzN8+HD6989uoDh8+HCuu+46nnrqKaZMmcKUKdmHyXnz5jFu3Dj23XdfvvGNb7Ssf8sttzBhwgT2339/DjvssHe0/7Of/YzDDz+cV199le9+97tceOGFDB48GIDBgwczY8YMABYtWsT48eMZN24cp556Kq+99lpL+3vvvTcTJkzg+uuvb2n35Zdf5tRTT2XSpEmMHz+e+fPnd/lzU84hpp3IjgrGAOuA/wCmdkG7s4BZADU1NTQ1NXWqnekDp7dMd7YNM9s6Q4YMYf369S3zb256s0vbz7e9JQcddBCzZ89mzz33pK6ujmOOOYZTTjmFH/zgB9x4440MGzaMxx57jK9//evcfvvtDB06lKOPPpp58+YxefJkTjvtNH77298yevRonn/+edavX89rr71Gv379OPfcc2lsbOTKK69sWbbLLru8I66NGzcyY8YMFixYwNixY5k1axbnnXceM2fO5LTTTuPGG2/kfe97HyeffDKbNm1i/fr1zJkzh4MOOojzzz+fdevWMWXKFA488EB23HHHd7Td2fe4cg4xfQz4c0Q8CyDpeuDDwFBJfdNRwkiy+9aS/o4CVkrqCwwhux/tZiKiHqgHqK2tjbq6uk4FN6dhTst04zEeYjKrhCVLljBo0KCW+T59+3Rp+/m226rzwAMP8Ic//IHGxkZOOeUU5s6diyQGDhzIoEGDuPXWW5kyZUrL7wlOOukk7rnnHgYOHMghhxzCuHHjNtte//79ueaaaxg1ahS//vWv6devHy+99NIWY3ryySfZY489mDBhAgCnnXYaF1xwAVOnTmWPPfZg/PjxAJx88snU19czaNAgmpqauOWWW7jgggsAeP3113nhhRd4z3ves1nbAwYMaFm/o8qZIP4CTJa0A/AqcBjZjcEbgWOBXwIzgObjogVp/o60/NZynX8wM8vr06cPdXV11NXVMW7cOBoaGra6zXHjxrF48eKWH6oNHjyY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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "# This is a code cell\n",
+    "# --- Your code for generating the histogram goes here ---\n",
+    "\n",
+    "df_3 = df[['InvoiceNo','StockCode',]].drop_duplicates(subset=[\"StockCode\"]).groupby([\"InvoiceNo\"]).agg(\"count\")\n",
+    "df_3.plot.hist(grid=False, bins=100, rwidth=.8, facecolor='g', alpha=0.75)\n",
+    "plt.title('Number of unique items per transaction')\n",
+    "plt.xlabel('Number of unique items')\n",
+    "plt.ylabel('Counts')\n",
+    "plt.grid(axis='y', alpha=1)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    ">**Insights and reasons for (9):**\n",
+    "<br>There are more smaller number of unique items, mostly under 10. In another word, the majority of transactions happen when clients buy less than 10 kinds of items. \n",
+    " - I assume that's because there are more smaller transactions where clients only buy one or two books. This finding is interesting because it may help distinguish types of transactions"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 10) We can also explore the data based on the items.  Let us make a bar plot of the items with support higher than 0.5%. Please describe one insight that you can observe from the plot, and explain how it can be related to rule mining. </span>"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 139,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "<matplotlib.axes._subplots.AxesSubplot at 0x122c9d320>"
+      ]
+     },
+     "execution_count": 139,
+     "metadata": {},
+     "output_type": "execute_result"
+    },
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "# This is a code cell\n",
+    "# --- Your code for generating the bar plot goes here ---\n",
+    "\n",
+    "df_4 = df[[\"InvoiceNo\",\"Description\",\"Quantity\"]]\n",
+    "\n",
+    "basket = (df_4.groupby([\"InvoiceNo\",\"Description\"])[\"Quantity\"].sum() \\\n",
+    "            .unstack().reset_index().fillna(0).set_index(\"InvoiceNo\")) \\\n",
+    "            .applymap(lambda x: 0 if x <= 0 else 1)\n",
+    "\n",
+    "# Construct frequent itemset\n",
+    "freq_set = mlx_apriori(basket, min_support=0.05, use_colnames=True)\n",
+    "freq_set = freq_set.sort_values([\"support\"],ascending=True)\n",
+    "freq_set.plot.barh(x = 'itemsets',y = 'support')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    ">**Insights and reasons for (10)**:<br>\n",
+    "The item with highest support is \"*White hanging heart t-light holder*\". And all items have only one itemset. From the bar plot we can examine that support of itemsets with only one item is higher than(if not equal to) itemsets with more items."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 11) Compare the “best-seller” that you have previously found in (8) and the item with the highest support that you have just found in (10). Which item do you think is more popular? Here we define the “popular” items as items that are bought by many customers. Explain you answer and describe any assumptions you’ve made. </span>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    ">**Answer and explanations to (11):**<br>\n",
+    "The item found in (10) is more popular. \n",
+    "- Because the item in (8) has highest sales volume, but here \"popular\" is defined by customer counts, which makes item in (10) more \"popular\"."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Section 2 - Mining Association Rules"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 1) Will we complete the counting before the sun burns out (the sun has another $ 5 \\times 10^9 < 2^{33} $ years to burn)? </span>"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 111,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "True"
+      ]
+     },
+     "execution_count": 111,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "pow(3,3676)-pow(2,2677)+1 > pow(2,33)*365*24*3600*pow(2,36)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    ">**Answer and reasons for (1):**<br>\n",
+    "- Number of unique items = 3676<br>\n",
+    "Counts of brute-force method = 3^3676 - 2^(3676+1) + 1 > 365 \\* 24 \\* 3600 \\* 2^33 \\* 2^36<br>\n",
+    "Therefore, we will not complete counting before the sun burns out."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 2) Run efficient-apriori in python with min_support=0.5%, min_confidence=20%, max_length=4. Write down the rule with the highest lift (denoted as $r_1$). </span>"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 123,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Time:  1033.3675129413605 seconds\n"
+     ]
+    }
+   ],
+   "source": [
+    "# This is a code cell\n",
+    "# --- Your code for apriori algorithm goes here ---\n",
+    "\n",
+    "df_5 = df[[\"InvoiceNo\",\"Description\"]]\n",
+    "basket_set = df_5.groupby(\"InvoiceNo\").Description.apply(tuple).tolist()\n",
+    "start = time.time()\n",
+    "itemsets_1, rules_1 = eff_apriori(basket_set, min_support=0.005, min_confidence = 0.2, max_length = 4)\n",
+    "count_time = time.time() - start\n",
+    "print('Time: ', count_time, 'seconds')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 153,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "{DOLLY GIRL CHILDRENS CUP} -> {DOLLY GIRL CHILDRENS BOWL} (conf: 0.810, supp: 0.005, lift: 121.624, conv: 5.215) {DOLLY GIRL CHILDRENS BOWL} -> {DOLLY GIRL CHILDRENS CUP} (conf: 0.821, supp: 0.005, lift: 121.624, conv: 5.539) {HERB MARKER PARSLEY, HERB MARKER THYME} -> {HERB MARKER BASIL, HERB MARKER CHIVES } (conf: 0.820, supp: 0.006, lift: 120.666, conv: 5.511) {HERB MARKER BASIL, HERB MARKER CHIVES } -> {HERB MARKER PARSLEY, HERB MARKER THYME} (conf: 0.953, supp: 0.006, lift: 120.666, conv: 20.976) {REGENCY TEA PLATE GREEN , ROSES REGENCY TEACUP AND SAUCER } -> {GREEN REGENCY TEACUP AND SAUCER, REGENCY TEA PLATE ROSES } (conf: 0.791, supp: 0.006, lift: 120.480, conv: 4.750) {GREEN REGENCY TEACUP AND SAUCER, REGENCY TEA PLATE ROSES } -> {REGENCY TEA PLATE GREEN , ROSES REGENCY TEACUP AND SAUCER } (conf: 0.846, supp: 0.006, lift: 120.480, conv: 6.454)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "4925"
+      ]
+     },
+     "execution_count": 153,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "print(*sorted(rules_1, key=lambda rule: -rule.lift)[0:6])\n",
+    "len(rules_1)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    ">**The rule you find for (2):**<br>\n",
+    "Rule with highest fit:<br> \n",
+    "{DOLLY GIRL CHILDRENS CUP} -> {DOLLY GIRL CHILDRENS BOWL}<br>\n",
+    "{DOLLY GIRL CHILDRENS BOWL} -> {DOLLY GIRL CHILDRENS CUP}"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 3) Run efficient-apriori in python with min_support=1%, min_confidence=20%, max_length=4. Write down the rule with the highest lift (denoted as $r_2$). </span>"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 140,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Time:  274.4368782043457 seconds\n"
+     ]
+    }
+   ],
+   "source": [
+    "# This is a code cell\n",
+    "# --- Your code for apriori algorithm goes here ---\n",
+    "\n",
+    "start = time.time()\n",
+    "itemsets_2, rules_2 = eff_apriori(basket_set, min_support=0.01, min_confidence = 0.2, max_length = 4)\n",
+    "count_time = time.time() - start\n",
+    "print('Time: ', count_time, 'seconds')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 154,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "{SET/6 RED SPOTTY PAPER PLATES} -> {SET/6 RED SPOTTY PAPER CUPS} (conf: 0.726, supp: 0.011, lift: 55.506, conv: 3.604) {SET/6 RED SPOTTY PAPER CUPS} -> {SET/6 RED SPOTTY PAPER PLATES} (conf: 0.828, supp: 0.011, lift: 55.506, conv: 5.730) {REGENCY TEA PLATE ROSES } -> {REGENCY TEA PLATE GREEN } (conf: 0.682, supp: 0.011, lift: 54.055, conv: 3.108) {REGENCY TEA PLATE GREEN } -> {REGENCY TEA PLATE ROSES } (conf: 0.844, supp: 0.011, lift: 54.055, conv: 6.296) {POPPY'S PLAYHOUSE KITCHEN} -> {POPPY'S PLAYHOUSE BEDROOM } (conf: 0.731, supp: 0.012, lift: 49.898, conv: 3.658) {POPPY'S PLAYHOUSE BEDROOM } -> {POPPY'S PLAYHOUSE KITCHEN} (conf: 0.799, supp: 0.012, lift: 49.898, conv: 4.905)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "525"
+      ]
+     },
+     "execution_count": 154,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "print(*sorted(rules_2, key=lambda rule: -rule.lift)[0:6])\n",
+    "len(rules_2)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    ">**The rule you find for (3):**<br>\n",
+    "Rule with highest fit:<br> \n",
+    "{SET/6 RED SPOTTY PAPER PLATES} -> {SET/6 RED SPOTTY PAPER CUPS}<br>\n",
+    "{SET/6 RED SPOTTY PAPER CUPS} -> {SET/6 RED SPOTTY PAPER PLATES}"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 4) Run efficient-apriori in python with min_support=0.5%, min_confidence=40%, max_length=4. Write down the rule with the highest lift (denoted as $r_3$). </span>"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 143,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Time:  1048.9448318481445 seconds\n"
+     ]
+    }
+   ],
+   "source": [
+    "# This is a code cell\n",
+    "# --- Your code for apriori algorithm goes here ---\n",
+    "\n",
+    "start = time.time()\n",
+    "itemsets_3, rules_3 = eff_apriori(basket_set, min_support=0.005, min_confidence = 0.4, max_length = 4)\n",
+    "count_time = time.time() - start\n",
+    "print('Time: ', count_time, 'seconds')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 155,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "{DOLLY GIRL CHILDRENS CUP} -> {DOLLY GIRL CHILDRENS BOWL} (conf: 0.810, supp: 0.005, lift: 121.624, conv: 5.215) {DOLLY GIRL CHILDRENS BOWL} -> {DOLLY GIRL CHILDRENS CUP} (conf: 0.821, supp: 0.005, lift: 121.624, conv: 5.539) {HERB MARKER PARSLEY, HERB MARKER THYME} -> {HERB MARKER BASIL, HERB MARKER CHIVES } (conf: 0.820, supp: 0.006, lift: 120.666, conv: 5.511) {HERB MARKER BASIL, HERB MARKER CHIVES } -> {HERB MARKER PARSLEY, HERB MARKER THYME} (conf: 0.953, supp: 0.006, lift: 120.666, conv: 20.976) {REGENCY TEA PLATE GREEN , ROSES REGENCY TEACUP AND SAUCER } -> {GREEN REGENCY TEACUP AND SAUCER, REGENCY TEA PLATE ROSES } (conf: 0.791, supp: 0.006, lift: 120.480, conv: 4.750) {GREEN REGENCY TEACUP AND SAUCER, REGENCY TEA PLATE ROSES } -> {REGENCY TEA PLATE GREEN , ROSES REGENCY TEACUP AND SAUCER } (conf: 0.846, supp: 0.006, lift: 120.480, conv: 6.454)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "2774"
+      ]
+     },
+     "execution_count": 155,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "print(*sorted(rules_3, key=lambda rule: -rule.lift)[0:6])\n",
+    "len(rules_3)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    ">**The rule you find for (4):**<br>\n",
+    "Rule with highest fit:<br>\n",
+    "{DOLLY GIRL CHILDRENS CUP} -> {DOLLY GIRL CHILDRENS BOWL}<br>\n",
+    "{DOLLY GIRL CHILDRENS BOWL} -> {DOLLY GIRL CHILDRENS CUP}"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 5) You must have noticed numerous differences between the two runs in (2) and (3). List at least 3 differences you’ve found. You may want to consider the elapsed time and the quality of the results.  </span>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    ">**The differences you find in (5):**<br>\n",
+    "- elaspsed time: r1(1033s) > r2(274s);<br>\n",
+    "- r1 has more itemsets records: r1(4925) > r2(525);<br>\n",
+    "- r2 has higher fit than r1."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 6) Which one in $r_1$,$r_2$, and $r_3$ do you think is better? Explain your answer. </span>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    ">**Answer and reasons for (6):**<br>\n",
+    "I think **r3** is the best. <br>\n",
+    "- \n",
+    "Though it cost more time, its lift & min_confidence are the highest. So r3 is the best of three."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 7) From your observation, what are the effects of increasing/reducing min_support and min_confidence? Support your answer with evidence. </span>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    ">**Answer and evidences for (7):**<br>\n",
+    "1) The reduce of min_support (increase of min_confidence) will increase elapsed time. <br>\n",
+    " **Evidence:** *r3.supp $\\approx$ r2.supp > r1.supp **==>** r3.time(1048s) > r1.time(1033) > r2.time(274s)*<br>\n",
+    "2) The reduce of min_support (increase of min_confidence) will result in better performance<br>\n",
+    " **Evidence:** *r3.supp $\\approx$ r2.supp > r1.supp **==>** r3.fit > r1.fit > r2.fit*<br>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Section 3 - Mining Sequential Rules"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 1) Organize the dataset into sequences and fill the table below. </span>"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 105,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Encode StockCode into integer 1-3676\n",
+    "df_6 = df\n",
+    "df_6 = df_6.assign(IntCode = lambda x: x.StockCode.astype('category').cat.codes+1)\n",
+    "df_6.to_csv(\"IntStockCode.csv\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 113,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>Unnamed: 0</th>\n",
+       "      <th>CustomerID</th>\n",
+       "      <th>items1</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>1</td>\n",
+       "      <td>12346</td>\n",
+       "      <td>2002 -1 2002</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>2</td>\n",
+       "      <td>12347</td>\n",
+       "      <td>3248 1251 2659 1357 1625 1626 1627 1628 1629 1...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>3</td>\n",
+       "      <td>12348</td>\n",
+       "      <td>3142 1798 3141 3141 427 427 1474 917 918 754 4...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>4</td>\n",
+       "      <td>12349</td>\n",
+       "      <td>1948 2272 646 556 645 1033 1091 2631 3132 1683...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>5</td>\n",
+       "      <td>12350</td>\n",
+       "      <td>876 1282 2734 2751 1228 2816 1412 1417 824 882...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>5</th>\n",
+       "      <td>6</td>\n",
+       "      <td>12352</td>\n",
+       "      <td>534 968 440 1504 1633 1293 1511 1024 773 774 7...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>6</th>\n",
+       "      <td>7</td>\n",
+       "      <td>12353</td>\n",
+       "      <td>2509 2506 1738 2510</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>7</th>\n",
+       "      <td>8</td>\n",
+       "      <td>12354</td>\n",
+       "      <td>2036 2039 2040 2087 2088 2089 886 1689 443 314...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>8</th>\n",
+       "      <td>9</td>\n",
+       "      <td>12355</td>\n",
+       "      <td>1548 1916 1917 1738 1506 1293 3194 1554 1552 1...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>9</th>\n",
+       "      <td>10</td>\n",
+       "      <td>12356</td>\n",
+       "      <td>1040 413 362 414 439 964 966 970 1034 1033 109...</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   Unnamed: 0  CustomerID                                             items1\n",
+       "0           1       12346                                       2002 -1 2002\n",
+       "1           2       12347  3248 1251 2659 1357 1625 1626 1627 1628 1629 1...\n",
+       "2           3       12348  3142 1798 3141 3141 427 427 1474 917 918 754 4...\n",
+       "3           4       12349  1948 2272 646 556 645 1033 1091 2631 3132 1683...\n",
+       "4           5       12350  876 1282 2734 2751 1228 2816 1412 1417 824 882...\n",
+       "5           6       12352  534 968 440 1504 1633 1293 1511 1024 773 774 7...\n",
+       "6           7       12353                                2509 2506 1738 2510\n",
+       "7           8       12354  2036 2039 2040 2087 2088 2089 886 1689 443 314...\n",
+       "8           9       12355  1548 1916 1917 1738 1506 1293 3194 1554 1552 1...\n",
+       "9          10       12356  1040 413 362 414 439 964 966 970 1034 1033 109..."
+      ]
+     },
+     "execution_count": 113,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# \"df2.csv\" is generated by R since it is easier to change format in R\n",
+    "my_df = pd.read_csv(\"mydf.csv\")\n",
+    "my_df.head(10)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 114,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Generate input file for SPMF\n",
+    "SPMF_input = my_df.items1 + \" -2\"\n",
+    "SPMF_input.to_csv(\"input.csv\", index=False)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Beginning Date of Sequence: 2011-01-18 09:50:00\n",
+      "Ending Date of Sequence: 2011-11-17 08:40:00\n",
+      "Number of transactions in the sequence: 3\n"
+     ]
+    }
+   ],
+   "source": [
+    "# For the markdown cell below (The sequential data above does not include time and transaction counts)\n",
+    "print(\"Beginning Date of Sequence:\",df[df.CustomerID == 12356].InvoiceDate.min())\n",
+    "print(\"Ending Date of Sequence:\",df[df.CustomerID == 12356].InvoiceDate.max())\n",
+    "print(\"Number of transactions in the sequence:\",series[series.index == 12356.0].data[0])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "This is a markdown cell. Please fill in your answer for (1).\n",
+    "\n",
+    "| CustomerID | Beginning Date of Sequence | Ending Date of Sequence | Number of transactions in the sequence |\n",
+    "|:----------:|:--------------------------:|:-----------------------:|:--------------------------------------:|\n",
+    "|    12356   |        _2011-01-18_        |       _2011-11-17_      |              3              |"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 2) Run ERMiner with min_support=0.5%, min_confidence=60%, maximum length of antecedent and consequence being 1. Write down the rule(s) with the highest confidence. </span> You need to convert the dataset into the format that SPMF supports. Please read http://www.philippe-fournier-viger.com/spmf/ERMiner.php carefully."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 115,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>First</th>\n",
+       "      <th></th>\n",
+       "      <th>Second</th>\n",
+       "      <th>Support</th>\n",
+       "      <th>a</th>\n",
+       "      <th>Confidence</th>\n",
+       "      <th>b</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>1094</td>\n",
+       "      <td>==&gt;</td>\n",
+       "      <td>1093</td>\n",
+       "      <td>#SUP:</td>\n",
+       "      <td>31</td>\n",
+       "      <td>#CONF:</td>\n",
+       "      <td>0.720930</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>1699</td>\n",
+       "      <td>==&gt;</td>\n",
+       "      <td>1697</td>\n",
+       "      <td>#SUP:</td>\n",
+       "      <td>46</td>\n",
+       "      <td>#CONF:</td>\n",
+       "      <td>0.676471</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>1583</td>\n",
+       "      <td>==&gt;</td>\n",
+       "      <td>1581</td>\n",
+       "      <td>#SUP:</td>\n",
+       "      <td>105</td>\n",
+       "      <td>#CONF:</td>\n",
+       "      <td>0.636364</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>6</th>\n",
+       "      <td>1711</td>\n",
+       "      <td>==&gt;</td>\n",
+       "      <td>3250</td>\n",
+       "      <td>#SUP:</td>\n",
+       "      <td>24</td>\n",
+       "      <td>#CONF:</td>\n",
+       "      <td>0.631579</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>1848</td>\n",
+       "      <td>==&gt;</td>\n",
+       "      <td>1844</td>\n",
+       "      <td>#SUP:</td>\n",
+       "      <td>22</td>\n",
+       "      <td>#CONF:</td>\n",
+       "      <td>0.628571</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>8</th>\n",
+       "      <td>3267</td>\n",
+       "      <td>==&gt;</td>\n",
+       "      <td>173</td>\n",
+       "      <td>#SUP:</td>\n",
+       "      <td>22</td>\n",
+       "      <td>#CONF:</td>\n",
+       "      <td>0.628571</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>7</th>\n",
+       "      <td>3047</td>\n",
+       "      <td>==&gt;</td>\n",
+       "      <td>3250</td>\n",
+       "      <td>#SUP:</td>\n",
+       "      <td>25</td>\n",
+       "      <td>#CONF:</td>\n",
+       "      <td>0.625000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>5</th>\n",
+       "      <td>1655</td>\n",
+       "      <td>==&gt;</td>\n",
+       "      <td>3250</td>\n",
+       "      <td>#SUP:</td>\n",
+       "      <td>124</td>\n",
+       "      <td>#CONF:</td>\n",
+       "      <td>0.620000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>2790</td>\n",
+       "      <td>==&gt;</td>\n",
+       "      <td>394</td>\n",
+       "      <td>#SUP:</td>\n",
+       "      <td>39</td>\n",
+       "      <td>#CONF:</td>\n",
+       "      <td>0.609375</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   First       Second Support    a Confidence         b\n",
+       "0   1094  ==>    1093   #SUP:   31     #CONF:  0.720930\n",
+       "2   1699  ==>    1697   #SUP:   46     #CONF:  0.676471\n",
+       "1   1583  ==>    1581   #SUP:  105     #CONF:  0.636364\n",
+       "6   1711  ==>    3250   #SUP:   24     #CONF:  0.631579\n",
+       "3   1848  ==>    1844   #SUP:   22     #CONF:  0.628571\n",
+       "8   3267  ==>     173   #SUP:   22     #CONF:  0.628571\n",
+       "7   3047  ==>    3250   #SUP:   25     #CONF:  0.625000\n",
+       "5   1655  ==>    3250   #SUP:  124     #CONF:  0.620000\n",
+       "4   2790  ==>     394   #SUP:   39     #CONF:  0.609375"
+      ]
+     },
+     "execution_count": 115,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Retrieved results from SPMF\n",
+    "result = pd.read_csv('output.txt', sep=\" \", header=None)\n",
+    "result.columns = [\"First\", \"\",\"Second\", \"Support\", \"a\",\"Confidence\",\"b\"]\n",
+    "result.sort_values('b',ascending=False)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 118,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "222    LARGE POPCORN HOLDER \n",
+      "Name: Description, dtype: object\n",
+      "221    SMALL POPCORN HOLDER\n",
+      "Name: Description, dtype: object\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(df_6.loc[df_6.IntCode == 1094].head(1).Description)\n",
+    "print(df_6.loc[df_6.IntCode == 1093].head(1).Description)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    ">**The rule(s) you find for (2):**<br>\n",
+    "- LARGE POPCORN HOLDER --> SMALL POPCORN HOLDER"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 3) Do you think the parameters used in (2) are good in practice? If yes, explain your answer. If no, give a better set of parameters and explain why it is better. </span>"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 121,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>First</th>\n",
+       "      <th></th>\n",
+       "      <th>Second</th>\n",
+       "      <th>Support</th>\n",
+       "      <th>a</th>\n",
+       "      <th>Confidence</th>\n",
+       "      <th>b</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>28</th>\n",
+       "      <td>674</td>\n",
+       "      <td>==&gt;</td>\n",
+       "      <td>1293</td>\n",
+       "      <td>#SUP:</td>\n",
+       "      <td>9</td>\n",
+       "      <td>#CONF:</td>\n",
+       "      <td>0.900000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>40</th>\n",
+       "      <td>2616</td>\n",
+       "      <td>==&gt;</td>\n",
+       "      <td>173</td>\n",
+       "      <td>#SUP:</td>\n",
+       "      <td>9</td>\n",
+       "      <td>#CONF:</td>\n",
+       "      <td>0.900000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>41</th>\n",
+       "      <td>2616</td>\n",
+       "      <td>==&gt;</td>\n",
+       "      <td>1258</td>\n",
+       "      <td>#SUP:</td>\n",
+       "      <td>9</td>\n",
+       "      <td>#CONF:</td>\n",
+       "      <td>0.900000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>62</th>\n",
+       "      <td>3201</td>\n",
+       "      <td>==&gt;</td>\n",
+       "      <td>3070</td>\n",
+       "      <td>#SUP:</td>\n",
+       "      <td>9</td>\n",
+       "      <td>#CONF:</td>\n",
+       "      <td>0.818182</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>74</th>\n",
+       "      <td>577</td>\n",
+       "      <td>==&gt;</td>\n",
+       "      <td>3250</td>\n",
+       "      <td>#SUP:</td>\n",
+       "      <td>11</td>\n",
+       "      <td>#CONF:</td>\n",
+       "      <td>0.733333</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "    First       Second Support   a Confidence         b\n",
+       "28    674  ==>    1293   #SUP:   9     #CONF:  0.900000\n",
+       "40   2616  ==>     173   #SUP:   9     #CONF:  0.900000\n",
+       "41   2616  ==>    1258   #SUP:   9     #CONF:  0.900000\n",
+       "62   3201  ==>    3070   #SUP:   9     #CONF:  0.818182\n",
+       "74    577  ==>    3250   #SUP:  11     #CONF:  0.733333"
+      ]
+     },
+     "execution_count": 121,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Retrieved results from SPMF: min_support = 0.2%, min_confidence  = 60%\n",
+    "result1 = pd.read_csv('~/Desktop/output.txt', sep=\" \", header=None)\n",
+    "result1.columns = [\"First\", \"\",\"Second\", \"Support\", \"a\",\"Confidence\",\"b\"]\n",
+    "result1.sort_values('b',ascending=False).head(5)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    ">**Your answer for (3):**<br>\n",
+    "Not good enough\n",
+    "- Explain: Min support can be set lower to mine sequential rules with more significant confidence. Min support being 0.2% is legit since 0.2% is still a lot considering our large sequential data. And when I change min_support to 0.2%, I got better confidence results. "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<span style=\"color:blue\"> 4) What are the differences between sequential rules and association rules? Give 2 of them. Describe a circumstance where sequential rules apply but association rules do not. </span>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<img src=\"http://www.philippe-fournier-viger.com/spmf/map_algorithms_spmf_data_mining097.png\">"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "**Your answer for (4):**<br> \n",
+    "I retrieved the above picture on SPMF website as a reference.<br>\n",
+    "<div class=\"alert alert-block alert-warning\">\n",
+    "<b>Difference:</b>\n",
+    "- **Input data form:** <br>\n",
+    " - Association: a transaction database <br>\n",
+    " - Sequential: a sequence database\n",
+    "- **The goal:**<br>\n",
+    " - Association: to find sets of items that appear often in transactions, without considering a sequential ordering such as time<br>\n",
+    " - Sequential: to discover subsequences that appear often in a set of sequences, where the sequential ordering between items is considered\n",
+    "</div>\n",
+    "**Circumstance:**<br>\n",
+    "When there is a sequential ordering in the data, we should use sequential rule mining instead of association rules."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Section 4 - Insights to Actions\n",
+    "\n",
+    "Please prepare a one-page report on the insights that you have derived from the dataset and how Nozama management can turn the insights into actions that will help it improve its sales and services. Please provide at least 4 insights and the corresponding actions. The insights should not overlap with what you have found in Sections 1~3. \n",
+    "\n",
+    "Please submit a one-page pdf file named __“YourNameInIVLE_YourIDInIVLE.pdf\"__ to the submission folder in IVLE."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.2"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
